@@ -100,13 +100,13 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" exported="" name="okio-1.9.0" level="project" />
     <orderEntry type="library" exported="" name="appcompat-v7-21.0.3" level="project" />
-    <orderEntry type="library" exported="" name="SpeechSDKLib-unspecified" level="project" />
     <orderEntry type="library" exported="" name="constraint-layout-solver-1.0.2" level="project" />
     <orderEntry type="library" exported="" name="fastjson-1.1.35" level="project" />
     <orderEntry type="library" exported="" name="okhttp-ws-2.7.0" level="project" />
     <orderEntry type="library" exported="" name="support-v4-21.0.3" level="project" />
     <orderEntry type="library" exported="" name="support-annotations-21.0.3" level="project" />
     <orderEntry type="library" exported="" name="constraint-layout-1.0.2" level="project" />
+    <orderEntry type="library" exported="" name="SpeechSDK-release-unspecified" level="project" />
     <orderEntry type="library" exported="" name="guava-17.0" level="project" />
     <orderEntry type="library" exported="" name="okhttp-2.7.0" level="project" />
     <orderEntry type="library" exported="" name="protobuf-javanano-3.0.0-alpha-3" level="project" />
