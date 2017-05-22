@@ -58,7 +58,7 @@ public class MainActivity extends Activity {
     private static final String STARTVOICE = "start_voice";
     private static final String ENDVOICE = "end";
     private static final String AUDIOFILE = "hello.wav";
-    private static boolean sVoiceStart = false;
+
 
     static AlarmManager am;
     static TextView mtextview;
@@ -66,12 +66,18 @@ public class MainActivity extends Activity {
     private static Context mContext;
     public static Handler mainHandler = new Handler();
     static List<String> strList = new ArrayList<String>();
-    static String[] storyAry = null;
+    static List<String> storyAry = new ArrayList<String>();
+    //static String[] storyAry = null;
     static int aryCount = 0;
 
     static String action = "";
-    static boolean FLAG = false;
+
+    //食譜步驟
+    static int recipeStepNum = 0;
+
+    static boolean ncumslAPI = true;
     static int eatmedicinefreq = 0;
+    static int tempfreq = 0;
     static boolean stop = false;
 
     private HotwordListener hotwordListener = new HotwordListener() {
@@ -90,7 +96,7 @@ public class MainActivity extends Activity {
 
                     @Override
                     public void onDone() {
-                        sVoiceStart = true;
+
                         SpeechClient.getInstance().startAsrRecognizer(sDeviceOne);
                         Log.i(TAG,"asr");
                         Runnable myRunnable = new Runnable() {
@@ -129,9 +135,10 @@ public class MainActivity extends Activity {
         SpeechClient.getInstance().setLocationString(sDeviceOne, sLocation);
         SpeechClient.getInstance().addHotwordListener(hotwordListener);
         //監聽時間 設定為10秒
-        SpeechClient.getInstance().setVad(sDeviceOne, VadType.DNNBasedVad, 50, 10000);
+        SpeechClient.getInstance().setVad(sDeviceOne, VadType.DNNBasedVad, 50, 500);
         SpeechClient.getInstance().setClientListener(sDeviceOne, new SpeechClientListenerImpl());
     }
+
 
     public static class SpeechClientListenerImpl implements SpeechClientListener {
         static Boolean goset = false;
@@ -178,10 +185,12 @@ public class MainActivity extends Activity {
         public void onFinalTranscription(String result) {
             Log.i(TAG, "finalResult" + result);
             Log.i(TAG,"action" + action);
+            ncumslAPI = true;
 
             //動作為吃藥，問什麼時候吃藥
             if (action.equals("eatmedicine")){
                 String[] AfterSplit = result.split(":");
+                action = "";
 
                 result = eatmedicinefreq+"medicineaskingtwo"+result;
 
@@ -191,38 +200,60 @@ public class MainActivity extends Activity {
                     hour = Integer.valueOf(AfterSplit[0]);
                     minute = Integer.valueOf(AfterSplit[1]);
                     Log.i(TAG,"hour" + AfterSplit[0] + "minute" + AfterSplit[1]);
-
                 }
             }
-            // 菜單下一步
-            else if (result.equals("下一步")){
-                Log.i(TAG,"next step");
-                action = "nextstep";
-                recipeActivity.stepTTS();
+            else if (action.equals("temperature")){
+                String[] AfterSplit = result.split(":");
+                action = "";
+
+                result = tempfreq+"medicineaskingtwo"+result;
+
+                Log.i(TAG,"result "+result);
+                if(!AfterSplit[0].isEmpty() && !AfterSplit[1].isEmpty()){
+                    goset = true;
+                    hour = Integer.valueOf(AfterSplit[0]);
+                    minute = Integer.valueOf(AfterSplit[1]);
+                    Log.i(TAG,"hour" + AfterSplit[0] + "minute" + AfterSplit[1]);
+                }
             }
+            else if(action.equals("recipe")){
+                if (result.equals("播放")){
+                    Log.i(TAG,"play");
+                    //不要跑 語意 api
+                    ncumslAPI = false;
+                    recipeActivity.playvideo();
+                    SpeechClient.getInstance().startHotword();
+
+                }
+                else if(result.equals("下一步")){
+                    ncumslAPI = false;
+                    recipeStepNum += 1;
+                    recipeStepNum = recipeActivity.stepTTS(recipeStepNum);
+                }
+
+            }
+
             // 鬧鈴結束
-            else if(result.equals("结束提醒")){
-
+            if(result.equals("结束提醒")){
                 closeAlarm(mContext);
+                ncumslAPI = false;
                 ttsSpeak("鬧鈴結束",false);
-
             }
+
             else if(result.equals("暂停")){
+                ncumslAPI = false;
                 stop = true;
             }
-            else{
-                // 連線MSL語意API
+
+            // 連線MSL語意API
+            if(ncumslAPI == true){
                 try{
-                    String uri = "http://140.115.53.190:5000/todo/api/v1.0/tasks/"+result;
+                    //若字串有空白，error
+                    result = result.replaceAll(" ", "");
+                    Log.i(TAG, "finalResult" + result);
+                    String uri = "http://140.115.53.190:8000/todo/api/v1.0/tasks/"+result;
                     Log.i(TAG, uri);
 
-                    /*
-
-                    HttpClient mHttpClient = new DefaultHttpClient();
-                    HttpGet mHttpGet = new HttpGet(uri);
-                    HttpResponse mHttpResponse = mHttpClient.execute(mHttpGet);
-
-                    */
                     HttpGet httpGet = new HttpGet(uri);
                     HttpParams httpParameters = new BasicHttpParams();
 
@@ -238,13 +269,12 @@ public class MainActivity extends Activity {
                     Log.i(TAG,String.valueOf(mHttpResponse.getStatusLine().getStatusCode()));
                     if(mHttpResponse.getStatusLine().getStatusCode() == HttpURLConnection.HTTP_OK ){
                         String mJsonText = EntityUtils.toString(mHttpResponse.getEntity());
-                        Log.i(TAG,mJsonText);
-                        //若MSL語意辨識不到，則跑問問語意
+                        Log.i(TAG,"mjsontext " + mJsonText);
+
+
                         if (mJsonText.equals("抱歉無法理解您的意圖,請重新輸入")){
-                            sVoiceStart = false;
-
-                            //跑onresult()
-
+                            //tts 抱歉無法理解你的意圖
+                            ttsSpeak("抱歉，無法理解你的意圖",false);
                         }
                         else{
                             //readstr : 是否要唸出 mJsonText
@@ -262,33 +292,92 @@ public class MainActivity extends Activity {
                                 Log.i(TAG,"frequence "+ String.valueOf(eatmedicinefreq));
                                 mJsonText = "請問下次吃藥的時間是幾點幾分";
                             }
+                            else if(mJsonText.indexOf("請問下次量體溫的時間是幾點幾分") > -1){
+                                action = "temperature";
 
-                            Log.i(TAG,String.valueOf(mJsonText.indexOf("recipe")));
+                                int firstindex = mJsonText.indexOf("(");
+                                int lastindex = mJsonText.indexOf(")");
+                                System.out.println(mJsonText.substring(firstindex+1,lastindex));
+                                tempfreq = Integer.parseInt(mJsonText.substring(firstindex+1,lastindex));
+
+                                //Log.i(TAG,"frequence "+ String.valueOf(eatmedicinefreq));
+                                mJsonText = "請問下次量體溫的時間是幾點幾分";
+
+                            }
+
                             //食譜
                             if(mJsonText.indexOf("recipe") > -1){
-
+                                action ="recipe";
                                 String[] RecipeSplit = mJsonText.split(",");
 
-                                readstr = false;
+                                if(!RecipeSplit[0].isEmpty()){
+                                    //食譜初始化
+                                    readstr = false;
+                                    recipeStepNum = 0;
 
-                                //開啟食譜頁面
+                                    //開啟食譜頁面
+                                    Intent i = new Intent();
+                                    i.setClass(mContext,recipeActivity.class);
+                                    i.putExtra("type","menu");
+                                    i.putExtra("dish",RecipeSplit[0]);
+                                    mContext.startActivity(i);
+                                }else{
+                                    mJsonText = "沒有這個食譜";
+                                }
+                            }
+                            //[食譜]跳到第n步
+                            else if(mJsonText.indexOf("step") > -1){
+                                Log.i(TAG,mJsonText);
+                                String[] StepSplit = mJsonText.split(",");
+
+                                if(action.equals("recipe") && !StepSplit[0].isEmpty()){
+                                    readstr = false;
+                                    recipeStepNum = Integer.valueOf(StepSplit[0]);
+                                    Log.i(TAG,String.valueOf(recipeStepNum));
+                                    recipeActivity.stepTTS(recipeStepNum-1);
+                                }
+                                else{
+                                    mJsonText = "不在食譜情境";
+                                }
+
+                            }
+                            //[食譜]原料輸入
+                            else if(mJsonText.indexOf("ingredients") > -1){
+                                action = "recipe";
+                                String[] RecipeSplit = mJsonText.split(",");
+
                                 Intent i = new Intent();
                                 i.setClass(mContext,recipeActivity.class);
-                                i.putExtra("dish",RecipeSplit[0]);
+                                i.putExtra("type","ingredients");
+                                i.putExtra("dish",RecipeSplit);
                                 mContext.startActivity(i);
 
                             }
 
-                            //若念的字串過大，分段唸出
+                            //[童話]若念的字串過大，分段唸出
                             Log.i(TAG,String.valueOf(mJsonText.length()));
-                            if(mJsonText.length()>100){
-                                storyAry= mJsonText.split("。");
+
+                            if(mJsonText.length()>500){
+
+                                //storyAry= mJsonText.split("。");
                                 //Log.i(TAG,storyAry[0]);
+                                int i;
+                                for(i = 0; (i+1)*500 < mJsonText.length();i++){
+                                    storyAry.add(mJsonText.substring(i*500, (i+1)*500));
+                                    //Log.i(TAG,"story split " + storyAry.get(i));
+                                }
 
-                                readStory(storyAry[0]);
+                                storyAry.add(mJsonText.substring(i*500, mJsonText.length()));
 
+                                readStory(storyAry.get(0));
 
                             }else if (readstr == true){
+                                if(action.equals("eatmedicine")){
+                                    ttsSpeak(mJsonText,true);
+                                }
+                                if(action.equals("temperature")){
+                                    ttsSpeak(mJsonText,true);
+                                }
                                 //若有抓到結果，直接唸出
                                 ttsSpeak(mJsonText,false);
                             }
@@ -311,7 +400,7 @@ public class MainActivity extends Activity {
                 } catch (IOException e1) {
                     Log.i(TAG,e1.toString());
                     e1.printStackTrace();
-                    ttsSpeak("api 連結錯誤",false);
+                    ttsSpeak("連結錯誤",false);
 
                 }
 
@@ -405,8 +494,9 @@ public class MainActivity extends Activity {
 
                 @Override
                 public void onDone() {
-
+                    Log.i(TAG,"array size" + String.valueOf(storyAry.size()));
                     if(storyAry != null && stop == false){
+                        /*
                         if (aryCount < storyAry.length-1){
                             readStory(storyAry[aryCount+1]);
                             Log.i(TAG,storyAry[aryCount+1]);
@@ -416,11 +506,22 @@ public class MainActivity extends Activity {
                         else{
                             storyAry = null;
                             aryCount =0;
+                        }*/
+
+                        if(aryCount < storyAry.size()-1){
+                            readStory(storyAry.get(aryCount+1));
+                            Log.i(TAG,storyAry.get(aryCount+1));
+                            aryCount += 1;
                         }
+                        else {
+                            List<String> storyAry = new ArrayList<String>();
+                            aryCount = 0;
+                        }
+
                     }
 
                     Log.i(TAG,String.valueOf(continueSpeak));
-                    SpeechClient.getInstance().setVad(sDeviceOne, VadType.DNNBasedVad, 50, 30000);
+
 
                     if (continueSpeak) {
                         //返回語音繼續監聽
@@ -457,10 +558,12 @@ public class MainActivity extends Activity {
                 action = "";
 
             }
+
         }
 
         private static int readStory(String str){
-            ttsSpeak(str,true);
+            ttsSpeak(str,false);
+
             Log.i(TAG,"end par");
             return 0;
         }

@@ -19,4 +19,9 @@ public class AlarmReceiver extends BroadcastReceiver {
 
         SpeechClientListenerImpl.ttsSpeak("提醒您，該吃藥了",false);
     }
+
+
+
+
+
 }
