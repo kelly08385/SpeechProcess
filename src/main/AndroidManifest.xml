@@ -18,9 +18,14 @@
             </intent-filter>
         </activity>
 
-        <receiver android:name=".AlarmReceiver" />
+        <receiver android:name=".HealthCare.AlarmReceiver" />
 
-        <activity android:name=".recipeActivity"></activity>
+        <activity android:name=".HealthCare.BloodPressure.BloodPressureActivity" />
+        <activity android:name=".HealthCare.BloodGlucose.BloodGlucoseActivity" />
+        <activity android:name=".HealthCare.Temperature.TemperatureActivity" />
+        <activity android:name=".recipeActivity" />
+        <activity android:name=".storyActivity" />
+        <activity android:name=".pictureActivity"></activity>
     </application>
 
 </manifest>

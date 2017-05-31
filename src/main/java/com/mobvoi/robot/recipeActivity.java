@@ -25,6 +25,7 @@ import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.protocol.HTTP;
 import org.apache.http.util.EntityUtils;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -40,15 +41,22 @@ import java.net.HttpURLConnection;
 import java.net.ProtocolException;
 import java.net.URL;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Objects;
 
 import com.android.internal.http.multipart.MultipartEntity;
 import com.google.android.youtube.player.YouTubeBaseActivity;
 import com.google.android.youtube.player.YouTubeInitializationResult;
 import com.google.android.youtube.player.YouTubePlayer;
 import com.google.android.youtube.player.YouTubePlayerFragment;
+
 import com.mobvoi.robot.MainActivity.SpeechClientListenerImpl;
 import com.google.android.youtube.player.YouTubePlayerView;
+import com.mobvoi.speech.SpeechClient;
 
+import java.io.Serializable;
 
 
 
@@ -89,14 +97,21 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
         img = (ImageView) findViewById(R.id.imageView);
 
         String type = intent.getStringExtra("type");
-        String dish = intent.getStringExtra("dish");
-        Log.i("SpeechSDKRobotDemo",dish);
+
 
         stepAry = null;
         if(type.equals("menu")){
+            String dish = intent.getStringExtra("dish");
             apiget(dish);
             //apipost(dish);
         }else if (type.equals("ingredients")){
+            //Bundle bundle = this.getIntent().getExtras();
+            //String dish = bundle.getString("dish");
+
+            String[] dish = intent.getStringArrayExtra("dish");
+
+            Log.i("dish",dish.toString());
+            //apipost(dish);
             apipost(dish);
         }
 
@@ -130,7 +145,6 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
         }
     }
 
-
     private void apiget(final String dish){
         Log.i("SpeechSDKRobotDemo","in the func api");
         new Thread(new Runnable(){
@@ -151,7 +165,6 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
                     String mJsonText = EntityUtils.toString(mHttpResponse.getEntity());
                     //Log.i("123",mJsonText);
                     jsonprocess(mJsonText);
-
 
                 }
             } catch (Exception e){
@@ -227,8 +240,13 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
     }
 
     //利用原料找
-    private void apipost(final String ingredients){
-        Log.i("123",ingredients);
+    private void apipost(String[] ingredients){
+        List<String> testList = new ArrayList<String>(Arrays.asList(ingredients));
+
+        final Object[] ingredientsObj = ingredients;
+        final JSONArray ingredientsAry = new JSONArray(testList);
+
+
         final HttpURLConnection[] httpcon = {null};
         new Thread(new Runnable() {
             @Override
@@ -241,12 +259,13 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
                     HttpClient httpclient = new DefaultHttpClient();
 
                     // 2. make POST request to the given URL
-                    HttpPost httpPost = new HttpPost("http://60.251.236.15:5000/related_ingredients");
+                    HttpPost httpPost = new HttpPost("http://60.251.236.15:5000/and_ingredients");
                     String json = "";
 
                     // 3. build jsonObject
                     JSONObject jsonObject = new JSONObject();
-                    jsonObject.put("ingredients", new JSONArray(new Object[] { "麵粉", "蛋", "高麗菜"} ));
+                    jsonObject.put("ingredients", ingredientsAry);
+                    //jsonObject.put("ingredients",  new JSONArray(new Object[]{ "高麗菜","牛肉"} ));
 
                     // 4. convert JSONObject to JSON to String
                     json = jsonObject.toString();
@@ -256,14 +275,15 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
                     // json = mapper.writeValueAsString(person);
 
                     // 5. set json to StringEntity
-                    StringEntity se = new StringEntity(json);
+                    StringEntity se = new StringEntity(json, HTTP.UTF_8);
 
                     // 6. set httpPost Entity
+                    se.setContentType("application/json");
                     httpPost.setEntity(se);
 
                     // 7. Set some headers to inform server about the type of the content
 
-                    httpPost.setHeader("Content-type", "application/json");
+                    //httpPost.setHeader("Content-type", "application/json");
 
 
                     // 8. Execute POST request to the given URL
@@ -284,6 +304,7 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
                     Log.i("123",result);
 
                 }catch (Exception e){
+                    Log.i("123","error" + e.toString());
 
                 }
 
@@ -301,18 +322,18 @@ public class recipeActivity extends Activity implements YouTubePlayer.OnInitiali
     // 下一步
     public static int stepTTS(int recipeStepNum){
         Log.i("SpeechSDKRobotDemo","stepTTS");
-        if(recipeStepNum < stepAry.length()){
+        if(recipeStepNum < stepAry.length() || recipeStepNum < 0){
             try {
+
                 SpeechClientListenerImpl.ttsSpeak(stepAry.getString(recipeStepNum),true);
             } catch (JSONException e) {
                 e.printStackTrace();
             }
         }
         else{
-            SpeechClientListenerImpl.ttsSpeak("已結束食譜教學",false);
-            recipeStepNum = 0;
+            return 0;
         }
-        return recipeStepNum;
+        return recipeStepNum+1;
     }
 
     public static void playvideo(){

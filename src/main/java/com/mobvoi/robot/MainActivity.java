@@ -15,10 +15,13 @@ import android.widget.TextView;
 
 import com.alibaba.fastjson.JSONException;
 import com.alibaba.fastjson.JSONObject;
+
+import com.mobvoi.robot.HealthCare.HealthCareManager;
 import com.mobvoi.speech.SpeechClient;
 import com.mobvoi.speech.SpeechClientListener;
 import com.mobvoi.speech.TTSListener;
 import com.mobvoi.speech.VadType;
+import com.mobvoi.speech.annotation.OnlineRecognizerApi;
 import com.mobvoi.speech.hotword.HotwordListener;
 import com.mobvoi.speech.tts.TTSRequest;
 
@@ -39,9 +42,11 @@ import java.util.Calendar;
 import android.os.Handler;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.logging.LogRecord;
 
 import com.mobvoi.robot.recipeActivity;
+import com.mobvoi.robot.storyActivity;
 
 
 import static com.mobvoi.robot.R.id.text;
@@ -73,12 +78,23 @@ public class MainActivity extends Activity {
     static String action = "";
 
     //食譜步驟
-    static int recipeStepNum = 0;
+    static int recipeStepNum = 1;
 
     static boolean ncumslAPI = true;
-    static int eatmedicinefreq = 0;
-    static int tempfreq = 0;
+    static int takeCareFreq = 0;
+    static int takeCareType = 0;
+
     static boolean stop = false;
+
+    static HealthCareManager healthCareManager;
+    static int diastolic = 0;
+    static int systolic = 0;
+    static int bpm = 0;
+    static int bloodstep = 0;
+
+
+    static int redhatIndex = 0;
+
 
     private HotwordListener hotwordListener = new HotwordListener() {
 
@@ -92,13 +108,14 @@ public class MainActivity extends Activity {
                 WavPlayer.getInstance().play(descriptor, new WavPlayer.Listener() {
                     @Override
                     public void onStart() {
+
                     }
 
                     @Override
                     public void onDone() {
-
-                        SpeechClient.getInstance().startAsrRecognizer(sDeviceOne);
                         Log.i(TAG,"asr");
+                        SpeechClient.getInstance().startAsrRecognizer(sDeviceOne);
+
                         Runnable myRunnable = new Runnable() {
                             @Override
                             public void run() {
@@ -128,6 +145,9 @@ public class MainActivity extends Activity {
         init();
         mContext = this;
         mtextview = (TextView) findViewById(text);
+        healthCareManager = new HealthCareManager(MainActivity.this);
+
+
     }
 
     public void init() {
@@ -135,18 +155,35 @@ public class MainActivity extends Activity {
         SpeechClient.getInstance().setLocationString(sDeviceOne, sLocation);
         SpeechClient.getInstance().addHotwordListener(hotwordListener);
         //監聽時間 設定為10秒
-        SpeechClient.getInstance().setVad(sDeviceOne, VadType.DNNBasedVad, 50, 500);
+        SpeechClient.getInstance().enableLocalSilence(false);
+        SpeechClient.getInstance().setRemoteVadParams(sDeviceOne, 5000, 1000);
         SpeechClient.getInstance().setClientListener(sDeviceOne, new SpeechClientListenerImpl());
+        SpeechClient.getInstance().startHotword();
+        Runnable myRunnable = new Runnable() {
+            @Override
+            public void run() {
+                mtextview.setText("用你好問問喚醒");
+
+            } // This is your code
+        };
+        mainHandler.post(myRunnable);
+
     }
 
 
     public static class SpeechClientListenerImpl implements SpeechClientListener {
-        static Boolean goset = false;
-        static int hour = 0;
-        static int minute = 0;
 
         @Override
         public void onStartRecord() {
+            Log.i(TAG,"on start record");
+            Runnable myRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    mtextview.setText(" 監聽中");
+
+                } // This is your code
+            };
+            mainHandler.post(myRunnable);
 
         }
 
@@ -188,35 +225,24 @@ public class MainActivity extends Activity {
             ncumslAPI = true;
 
             //動作為吃藥，問什麼時候吃藥
-            if (action.equals("eatmedicine")){
+            if (action.equals("TakeCare")){
                 String[] AfterSplit = result.split(":");
                 action = "";
-
-                result = eatmedicinefreq+"medicineaskingtwo"+result;
+                ncumslAPI = false;
 
                 Log.i(TAG,"result "+result);
                 if(!AfterSplit[0].isEmpty() && !AfterSplit[1].isEmpty()){
-                    goset = true;
-                    hour = Integer.valueOf(AfterSplit[0]);
-                    minute = Integer.valueOf(AfterSplit[1]);
+                    int hour = Integer.valueOf(AfterSplit[0]);
+                    int minute = Integer.valueOf(AfterSplit[1]);
                     Log.i(TAG,"hour" + AfterSplit[0] + "minute" + AfterSplit[1]);
+                    String speekstr = healthCareManager.enableAlarm(hour,minute,takeCareFreq,takeCareType);
+
+                    ttsSpeak(speekstr,false);
                 }
             }
-            else if (action.equals("temperature")){
-                String[] AfterSplit = result.split(":");
-                action = "";
-
-                result = tempfreq+"medicineaskingtwo"+result;
-
-                Log.i(TAG,"result "+result);
-                if(!AfterSplit[0].isEmpty() && !AfterSplit[1].isEmpty()){
-                    goset = true;
-                    hour = Integer.valueOf(AfterSplit[0]);
-                    minute = Integer.valueOf(AfterSplit[1]);
-                    Log.i(TAG,"hour" + AfterSplit[0] + "minute" + AfterSplit[1]);
-                }
-            }
+            //食譜情境
             else if(action.equals("recipe")){
+                Log.i(TAG,"recipestr" + String.valueOf(recipeStepNum));
                 if (result.equals("播放")){
                     Log.i(TAG,"play");
                     //不要跑 語意 api
@@ -225,25 +251,50 @@ public class MainActivity extends Activity {
                     SpeechClient.getInstance().startHotword();
 
                 }
+                else if(result.equals("上一步")){
+                    ncumslAPI = false;
+                    recipeStepNum -= 1;
+                    recipeStepNum = recipeActivity.stepTTS(recipeStepNum-1);
+                }
                 else if(result.equals("下一步")){
                     ncumslAPI = false;
                     recipeStepNum += 1;
-                    recipeStepNum = recipeActivity.stepTTS(recipeStepNum);
+                    recipeStepNum = recipeActivity.stepTTS(recipeStepNum-1);
+                }
+                if(recipeStepNum == 0){
+                    action = "";
+                    SpeechClientListenerImpl.ttsSpeak("已結束食譜教學", false);
                 }
 
-            }
 
-            // 鬧鈴結束
-            if(result.equals("结束提醒")){
-                closeAlarm(mContext);
+            }
+            //[長照] 血壓情境
+            else if(action.equals("bloodPressure")){
                 ncumslAPI = false;
-                ttsSpeak("鬧鈴結束",false);
+                if(bloodstep == 0){
+                    diastolic = Integer.valueOf(result);
+                    ttsSpeak("請問舒張壓多少",true);
+                    bloodstep +=1;
+                }else if(bloodstep == 1){
+                    systolic = Integer.valueOf(result);
+                    ttsSpeak("請問心率多少",true);
+                    bloodstep += 1;
+                }else{
+                    bpm = Integer.valueOf(result);
+                    healthCareManager.setBloodPressure(diastolic,systolic,bpm);
+                    action = "";
+                    bloodstep = 0;
+                    ttsSpeak("完成紀錄",false);
+                }
+
+
             }
 
-            else if(result.equals("暂停")){
+            /*
+            if(result.equals("暂停")){
                 ncumslAPI = false;
                 stop = true;
-            }
+            }*/
 
             // 連線MSL語意API
             if(ncumslAPI == true){
@@ -259,7 +310,7 @@ public class MainActivity extends Activity {
 
                     int timeoutConnection = 3000;
                     HttpConnectionParams.setConnectionTimeout(httpParameters, timeoutConnection);
-                    int timeoutSocket = 10000;
+                    int timeoutSocket = 20000;
                     HttpConnectionParams.setSoTimeout(httpParameters, timeoutSocket);
 
                     DefaultHttpClient httpClient = new DefaultHttpClient(httpParameters);
@@ -271,39 +322,31 @@ public class MainActivity extends Activity {
                         String mJsonText = EntityUtils.toString(mHttpResponse.getEntity());
                         Log.i(TAG,"mjsontext " + mJsonText);
 
-
                         if (mJsonText.equals("抱歉無法理解您的意圖,請重新輸入")){
                             //tts 抱歉無法理解你的意圖
-                            ttsSpeak("抱歉，無法理解你的意圖",false);
+                            if(action.equals("recipe")){
+                                ttsSpeak("沒聽清楚，請再說一遍",true);
+                            }
+                            else{
+                                ttsSpeak("抱歉，無法理解你的意圖",false);
+                            }
                         }
                         else{
                             //readstr : 是否要唸出 mJsonText
                             Boolean readstr = true;
 
-                            //對話情境
-                            if(mJsonText.indexOf("請問下次吃藥的時間是幾點幾分") > -1){
-                                action = "eatmedicine";
+                            //對話情境 TakeCare
+                            if(mJsonText.indexOf("請問下次") > -1){
+                                action = "TakeCare";
+                                String[] splitStr = mJsonText.split(",");
 
-                                int firstindex = mJsonText.indexOf("(");
-                                int lastindex = mJsonText.indexOf(")");
-                                System.out.println(mJsonText.substring(firstindex+1,lastindex));
-                                eatmedicinefreq = Integer.parseInt(mJsonText.substring(firstindex+1,lastindex));
+                                takeCareFreq = Integer.valueOf(splitStr[1]);
+                                takeCareType = switchType(splitStr[2]);
 
-                                Log.i(TAG,"frequence "+ String.valueOf(eatmedicinefreq));
-                                mJsonText = "請問下次吃藥的時間是幾點幾分";
+                                mJsonText = splitStr[0];
+                                Log.i(TAG,"freq"+String.valueOf(takeCareFreq)+"Type"+String.valueOf(takeCareType));
                             }
-                            else if(mJsonText.indexOf("請問下次量體溫的時間是幾點幾分") > -1){
-                                action = "temperature";
 
-                                int firstindex = mJsonText.indexOf("(");
-                                int lastindex = mJsonText.indexOf(")");
-                                System.out.println(mJsonText.substring(firstindex+1,lastindex));
-                                tempfreq = Integer.parseInt(mJsonText.substring(firstindex+1,lastindex));
-
-                                //Log.i(TAG,"frequence "+ String.valueOf(eatmedicinefreq));
-                                mJsonText = "請問下次量體溫的時間是幾點幾分";
-
-                            }
 
                             //食譜
                             if(mJsonText.indexOf("recipe") > -1){
@@ -313,7 +356,7 @@ public class MainActivity extends Activity {
                                 if(!RecipeSplit[0].isEmpty()){
                                     //食譜初始化
                                     readstr = false;
-                                    recipeStepNum = 0;
+                                    recipeStepNum = 1;
 
                                     //開啟食譜頁面
                                     Intent i = new Intent();
@@ -334,7 +377,7 @@ public class MainActivity extends Activity {
                                     readstr = false;
                                     recipeStepNum = Integer.valueOf(StepSplit[0]);
                                     Log.i(TAG,String.valueOf(recipeStepNum));
-                                    recipeActivity.stepTTS(recipeStepNum-1);
+                                    recipeStepNum = recipeActivity.stepTTS(recipeStepNum-1);
                                 }
                                 else{
                                     mJsonText = "不在食譜情境";
@@ -343,39 +386,118 @@ public class MainActivity extends Activity {
                             }
                             //[食譜]原料輸入
                             else if(mJsonText.indexOf("ingredients") > -1){
+                                readstr = false;
                                 action = "recipe";
                                 String[] RecipeSplit = mJsonText.split(",");
+                                Log.i(TAG,RecipeSplit.toString());
+                                String[] copyRecipeSplit = new String[RecipeSplit.length-1];
+                                System.arraycopy(RecipeSplit,0,copyRecipeSplit,0,copyRecipeSplit.length);
+                                Log.i(TAG,copyRecipeSplit.toString());
 
                                 Intent i = new Intent();
                                 i.setClass(mContext,recipeActivity.class);
                                 i.putExtra("type","ingredients");
-                                i.putExtra("dish",RecipeSplit);
+                                i.putExtra("dish",copyRecipeSplit);
                                 mContext.startActivity(i);
 
                             }
+                            //[長照] 紀錄
+                            else if(mJsonText.indexOf("action:record") > -1){
+                                String[] splitstr = mJsonText.split(":");
+                                int firstindex = splitstr[1].indexOf("(");
+                                int lastindex = splitstr[1].indexOf(")");
 
-                            //[童話]若念的字串過大，分段唸出
-                            Log.i(TAG,String.valueOf(mJsonText.length()));
+                                if (mJsonText.indexOf("Temperature")>-1 || mJsonText.indexOf("recordbloodGlucose") > -1){
+                                    String type = splitstr[1].substring(0,firstindex);
+                                    Log.i(TAG,"type"+type+"value"+splitstr[1].substring(firstindex+1,lastindex));
+                                    double value = Double.parseDouble(splitstr[1].substring(firstindex+1,lastindex));
 
-                            if(mJsonText.length()>500){
-
-                                //storyAry= mJsonText.split("。");
-                                //Log.i(TAG,storyAry[0]);
-                                int i;
-                                for(i = 0; (i+1)*500 < mJsonText.length();i++){
-                                    storyAry.add(mJsonText.substring(i*500, (i+1)*500));
-                                    //Log.i(TAG,"story split " + storyAry.get(i));
+                                    writeDB(type,value);
+                                    mJsonText = "已幫你記錄";
+                                }
+                                else if(mJsonText.indexOf("血壓") > -1){
+                                    action = "bloodPressure";
+                                    mJsonText = "請問你的收縮壓多少";
                                 }
 
-                                storyAry.add(mJsonText.substring(i*500, mJsonText.length()));
+                            }
+                            //[長照] 顯示
+                            else if(mJsonText.indexOf("action:display") > -1){
+                                readstr = false;
+                                String[] splitstr = mJsonText.split(":");
+                                int firstindex = splitstr[1].indexOf("(");
+                                int lastindex = splitstr[1].indexOf(")");
+                                String type = splitstr[1].substring(firstindex+1,lastindex);
+                                Log.i(TAG,"type"+type);
+                                showDB(type);
 
-                                readStory(storyAry.get(0));
+                            }
+                            // [長照] 取消鬧鈴
+                            else if(mJsonText.indexOf("action:cancle")>-1){
+                                readstr = false;
+                                String[] splitstr = mJsonText.split(":");
+                                int firstindex = splitstr[1].indexOf("(");
+                                int lastindex = splitstr[1].indexOf(")");
+                                String type = splitstr[1].substring(firstindex+1,lastindex);
+                                Log.i(TAG,"type"+type);
+                                cancleAlarm(type);
 
-                            }else if (readstr == true){
-                                if(action.equals("eatmedicine")){
-                                    ttsSpeak(mJsonText,true);
+                            }
+                            //[童話]
+                            else if(mJsonText.indexOf("storycontent")>-1){
+                                String[] splitstr = mJsonText.split("storycontent");
+                                if (splitstr[0].equals("小紅帽")){
+                                    action = "redhat";
+
+                                    readstr = false;
+                                    Intent i = new Intent();
+                                    i.setClass(mContext,storyActivity.class);
+                                    mContext.startActivity(i);
+
                                 }
-                                if(action.equals("temperature")){
+                                else{
+                                    if(splitstr[1].length()>500){
+
+                                        //storyAry= mJsonText.split("。");
+                                        //Log.i(TAG,storyAry[0]);
+                                        int i;
+                                        for(i = 0; (i+1)*500 < splitstr[1].length();i++){
+                                            storyAry.add(splitstr[1].substring(i*500, (i+1)*500));
+                                            //Log.i(TAG,"story split " + storyAry.get(i));
+                                        }
+
+                                        storyAry.add(splitstr[1].substring(i*500, splitstr[1].length()));
+
+                                        readStory(storyAry.get(0));
+
+                                    }
+                                }
+
+                            }
+                            //[唐詩][開燈]
+                            else if(mJsonText.indexOf("poem") > -1 || result.indexOf("灯") > -1){
+                                String[] splitstr = mJsonText.split(",");
+                                mJsonText = splitstr[0];
+
+                                Intent i = new Intent();
+                                i.setClass(mContext,pictureActivity.class);
+                                if(result.indexOf("静夜思") > -1){
+                                    i.putExtra("type","poem");
+                                    mContext.startActivity(i);
+                                }else if (result.indexOf("开灯") > -1){
+                                    i.putExtra("type","openlight");
+                                    mContext.startActivity(i);
+                                }else if(result.indexOf("关灯")>-1){
+                                    i.putExtra("type","closelight");
+                                    mContext.startActivity(i);
+                                }
+
+
+                            }
+
+
+                            if (readstr == true){
+                                if(action.equals("TakeCare") || action.equals("bloodPressure")){
                                     ttsSpeak(mJsonText,true);
                                 }
                                 //若有抓到結果，直接唸出
@@ -405,8 +527,6 @@ public class MainActivity extends Activity {
                 }
 
             }
-
-
         }
 
         @Override
@@ -451,30 +571,19 @@ public class MainActivity extends Activity {
 
         @Override
         public void onError(int errorCode) {
-            SpeechClient.getInstance().startHotword();
+            ttsSpeak("結束情境",false);
+
+            Log.i(TAG,"on error");
         }
 
         @Override
         public void onNoSpeechDetected() {
-
+            Log.i(TAG,"on no speech detected");
         }
 
         @Override
         public void onSpeechDetected() {
-
-        }
-
-        @Override
-        public void onReady() {
-            SpeechClient.getInstance().startHotword();
-            Runnable myRunnable = new Runnable() {
-                @Override
-                public void run() {
-                    mtextview.setText(" 用你好問問來喚醒 ");
-
-                } // This is your code
-            };
-            mainHandler.post(myRunnable);
+            Log.i(TAG,"on speech detected");
         }
 
         //語音合成測試
@@ -495,7 +604,19 @@ public class MainActivity extends Activity {
                 @Override
                 public void onDone() {
                     Log.i(TAG,"array size" + String.valueOf(storyAry.size()));
-                    if(storyAry != null && stop == false){
+                    Boolean ondoneflag = true;
+                    //[童話]
+                    if(redhatIndex == 7){
+                        redhatIndex = 0;
+                        action = "";
+                    }
+                    else if(action.equals("redhat")){
+                        redhatIndex += 1;
+                        ondoneflag = false;
+                        storyActivity.readNextContent(redhatIndex);
+                    }
+                    else if(storyAry != null && stop == false){
+
                         /*
                         if (aryCount < storyAry.length-1){
                             readStory(storyAry[aryCount+1]);
@@ -520,22 +641,30 @@ public class MainActivity extends Activity {
 
                     }
 
-                    Log.i(TAG,String.valueOf(continueSpeak));
 
 
-                    if (continueSpeak) {
+
+                    if (continueSpeak && ondoneflag) {
+                        if(action.equals("recipe")){
+                            SpeechClient.getInstance().setRemoteVadParams(sDeviceOne, 30000, 1000);
+                        }
+                        else {
+                            SpeechClient.getInstance().setRemoteVadParams(sDeviceOne, 5000, 1000);
+                        }
+
                         //返回語音繼續監聽
                         SpeechClient.getInstance().startAsrRecognizer(sDeviceOne);
+
                         Runnable myRunnable = new Runnable() {
                             @Override
                             public void run() {
                                 mtextview.setText(" 監聽中");
-
                             } // This is your code
                         };
                         mainHandler.post(myRunnable);
 
-                    } else {
+                    } else if(ondoneflag) {
+
                         //需用你好問問喚醒
                         SpeechClient.getInstance().startHotword();
                         Runnable myRunnable = new Runnable() {
@@ -549,16 +678,6 @@ public class MainActivity extends Activity {
                     }
                 }
             });
-
-            //設定吃藥鬧鐘
-            if(eatmedicinefreq > 0 && goset == true){
-                setAlarm(mContext,hour,minute);
-                eatmedicinefreq = 0;
-                goset = false;
-                action = "";
-
-            }
-
         }
 
         private static int readStory(String str){
@@ -570,39 +689,53 @@ public class MainActivity extends Activity {
 
     }
 
-    //設定吃藥鬧鐘
-    public static void setAlarm(Context c,int hour, int minute){
-
-        am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
-
-        Intent intent = new Intent(c, AlarmReceiver.class);
-        PendingIntent sender = PendingIntent.getBroadcast(c, 0, intent, 0);
-
-        // We want the alarm to go off 10 seconds from now.
-        Calendar calendar = Calendar.getInstance();
-        //calendar.setTimeInMillis(System.currentTimeMillis());
-
-        //calendar.add(Calendar.SECOND, 10);
-        calendar.set(Calendar.HOUR_OF_DAY, hour);
-        calendar.set(Calendar.MINUTE, minute);
-        Log.i(TAG,"frequence"+eatmedicinefreq);
-
-        // Schedule the alarm!
-        AlarmManager am = (AlarmManager) c.getSystemService(ALARM_SERVICE);
-        //am.set(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), sender);
-        am.setRepeating(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), 10 * eatmedicinefreq * 1000, sender);
-
+    //Take care 轉換type
+    public static int switchType(String Type){
+        if(Type.equals("吃藥")){
+            return DBHelper.TYPE_MEDICINE;
+        }
+        else if(Type.equals("量體溫")){
+            return DBHelper.TYPE_TEMPERATURE;
+        }
+        else{
+            return 0;
+        }
     }
 
-    //關閉鬧鐘
-    public static void closeAlarm(Context c){
-        Intent intent = new Intent(c, AlarmReceiver.class);
-        PendingIntent pi = PendingIntent.getBroadcast(c, 0, intent, 0);
-        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
-        am.cancel(pi);
-
-
+    //[長照] 寫入資料庫
+    public static void writeDB(String type, double value){
+        if(type.equals("recordTemperature")){
+            healthCareManager.setTemperature(value);
+        }else if(type.equals("recordbloodGlucose")){
+            healthCareManager.setBloodGlucose(value);
+        }
     }
-
+    //[長照] 顯示資料庫
+    public static void showDB(String type){
+        if(type.equals("體溫")){
+            healthCareManager.showTemperature();
+        }
+        else if(type.equals("血糖")){
+            healthCareManager.showBloodGlucose();
+        }
+        else if(type.equals("血壓")){
+            healthCareManager.showBloodPressure();
+        }
+    }
+    //[長照]取消鬧鈴
+    public static void cancleAlarm(String type){
+        if(type.equals("體溫")){
+            healthCareManager.disableAlarm(DBHelper.TYPE_TEMPERATURE);
+        }
+        else if(type.equals("血糖")){
+            healthCareManager.disableAlarm(DBHelper.TYPE_BLOOD_GLUCOSE);
+        }
+        else if(type.equals("血壓")){
+            healthCareManager.disableAlarm(DBHelper.TYPE_BLOOD_PRESSURE);
+        }
+        else if(type.equals("藥")){
+            healthCareManager.disableAlarm(DBHelper.TYPE_MEDICINE);
+        }
+    }
 
 }
